@@ -1,7 +1,6 @@
 variables:
-    SolutionBaseName: '__SolutionBaseName__'
-    BuildPlatform: 'any cpu'
-    BuildConfiguration: 'release'
+- name: SolutionBaseName
+  value: Dfc.Shared.Owasp
 
 resources:
   repositories:
@@ -9,23 +8,57 @@ resources:
   - repository: dfc-devops
     type: github
     name: SkillsFundingAgency/dfc-devops
-    ref: refs/tags/v1.11.2
     endpoint: 'GitHub (ESFA)'
+    ref: refs/tags/v1.11.2
+
+pool:
+  name: 'NCS - CI and CD'
+  demands:
+    - PowerShell
+    - AzurePS
+    - docker
+
+trigger:
+  branches:
+    include:
+    - master
+    - dev
+
+pr:
+  branches:
+    include:
+    - master
+    - dev
+
 
 stages:
-- stage: Build
-  displayName: Build, Test and Analyze
+- stage: BuildAndPublishContainers
+  condition: or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.Reason'], 'PullRequest'))
+  dependsOn: []
+  variables:
+  - group: KeyVault - dfc-dev-shared-kv
+  - group: dfc-shared-dev
   jobs:
-  - job: BuildTestAndAnalyze
-    pool:
-      name: NCS - CI and CD
-      demands:
-      - msbuild
-      - visualstudio
-    steps:
-    - template: AzureDevOpsTemplates\Build\StepTemplates\dfc-dotnetcore-build-sonar.yml@dfc-devops
-      parameters:
-        SolutionBaseName: $(SolutionBaseName)
-        BuildPlatform: $(BuildPlatform)
-        BuildConfiguration: $(BuildConfiguration)
-        DotNetCoreVersion: '3.1.100'
+  - template: JobTemplates\BuildAndPublishLinuxContainers.yml
+    parameters:
+      ContainerRegistryAdminUser: $(ContainerRegistryAdminUser)
+      ContainerRegistryPassword: $(ContainerRegistryPassword)
+
+- stage: DeployAzureDevOpsContainers
+  condition: and(succeeded('BuildAndPublishContainers'), eq(variables['Build.SourceBranch'], 'refs/heads/master'), ne(variables['Build.Reason'], 'PullRequest'))
+  dependsOn: BuildAndPublishContainers
+  variables:
+  - template: VariableTemplates\SharedEnvironmentVariables.yml
+  - template: VariableTemplates\DevEnvironmentVariables.yml
+  - group: KeyVault - dfc-dev-shared-kv
+  - group: dfc-shared-dev
+  - group: dfc-owasp-dev
+  jobs:
+  - template: JobTemplates\DeployContainers.yml
+    parameters:
+      AksResourceGroup: $(sharedResourceGroup)
+      AzurePatToken: $(AzureDevOpsAgentPatToken)
+      AzureSubscriptionEndpoint: 'SFA-CDH-Dev/Test (962cae10-2950-412a-93e3-d8ae92b17896)'
+      Environment: DEV_SHARED
+      KubernetesCluster: $(sharedAksCluster)
+      Namespace: 'owasp'
