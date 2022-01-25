@@ -18,11 +18,11 @@ pool:
     - AzurePS
     - docker
 
-trigger:
-  branches:
-    include:
-    - master
-    - dev
+# trigger:
+#   branches:
+#     include:
+#     - master
+#     - dev
 
 pr:
   branches:
