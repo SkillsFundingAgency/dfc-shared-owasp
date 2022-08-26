@@ -18,22 +18,22 @@ pool:
     - AzurePS
     - docker
 
-trigger:
-  branches:
-    include:
-    - master
-    - dev
+# trigger:
+#   branches:
+#     include:
+#     - master
+#     - dev
 
-pr:
-  branches:
-    include:
-    - master
-    - dev
+# pr:
+#   branches:
+#     include:
+#     - master
+#     - dev
 
 
 stages:
 - stage: BuildAndPublishContainers
-  condition: or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.Reason'], 'PullRequest'))
+  # condition: or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.Reason'], 'PullRequest'))
   dependsOn: []
   variables:
   - group: KeyVault - dfc-dev-shared-kv
@@ -44,9 +44,28 @@ stages:
       ContainerRegistryAdminUser: $(ContainerRegistryAdminUser)
       ContainerRegistryPassword: $(ContainerRegistryPassword)
 
-- stage: DeployAzureDevOpsContainers
-  condition: and(succeeded('BuildAndPublishContainers'), eq(variables['Build.SourceBranch'], 'refs/heads/master'), ne(variables['Build.Reason'], 'PullRequest'))
+- stage: DeployOwaspToLab
+  # condition: and(succeeded('BuildAndPublishContainers'), eq(variables['Build.SourceBranch'], 'refs/heads/master'), ne(variables['Build.Reason'], 'PullRequest'))
   dependsOn: BuildAndPublishContainers
+  variables:
+  - template: VariableTemplates\SharedEnvironmentVariables.yml
+  - template: VariableTemplates\LabEnvironmentVariables.yml
+  - group: KeyVault - dfc-lab-shared-kv
+  - group: dfc-shared-lab
+  - group: dfc-owasp-lab
+  jobs:
+  - template: JobTemplates\DeployContainers.yml
+    parameters:
+      AksResourceGroup: $(sharedResourceGroup)
+      AzurePatToken: $(AzureDevOpsAgentPatToken)
+      AzureSubscriptionEndpoint: 'SFA-CDH-Dev/Test (962cae10-2950-412a-93e3-d8ae92b17896)'
+      Environment: LAB_SHARED
+      KubernetesCluster: $(sharedAksCluster)
+      Namespace: 'owasp'
+
+- stage: DeployOwaspToDev
+  # condition: and(succeeded('BuildAndPublishContainers'), eq(variables['Build.SourceBranch'], 'refs/heads/master'), ne(variables['Build.Reason'], 'PullRequest'))
+  dependsOn: DeployOwaspToLab
   variables:
   - template: VariableTemplates\SharedEnvironmentVariables.yml
   - template: VariableTemplates\DevEnvironmentVariables.yml
@@ -62,3 +81,23 @@ stages:
       Environment: DEV_SHARED
       KubernetesCluster: $(sharedAksCluster)
       Namespace: 'owasp'
+
+- stage: DeployOwaspToSit
+  # condition: and(succeeded('BuildAndPublishContainers'), eq(variables['Build.SourceBranch'], 'refs/heads/master'), ne(variables['Build.Reason'], 'PullRequest'))
+  dependsOn: DeployOwaspToDev
+  variables:
+  - template: VariableTemplates\SharedEnvironmentVariables.yml
+  - template: VariableTemplates\SitEnvironmentVariables.yml
+  - group: KeyVault - dfc-sit-shared-kv
+  - group: dfc-shared-sit
+  - group: dfc-owasp-sit
+  jobs:
+  - template: JobTemplates\DeployContainers.yml
+    parameters:
+      AksResourceGroup: $(sharedResourceGroup)
+      AzurePatToken: $(AzureDevOpsAgentPatToken)
+      AzureSubscriptionEndpoint: 'SFA-CDH-Dev/Test (962cae10-2950-412a-93e3-d8ae92b17896)'
+      Environment: SIT_SHARED
+      KubernetesCluster: $(sharedAksCluster)
+      Namespace: 'owasp'
+            
